@@ -21,6 +21,9 @@ p{margin:0 0 12px}
 .hero .photo{width:176px;height:176px;object-fit:cover;object-position:50% 12%;border-radius:12px;border:1px solid var(--line);background:#fff;margin-top:22px}
 .hero .name{font-size:15px;color:var(--accent);font-weight:700;margin-bottom:6px}
 .hero .statement{font-size:24px;line-height:1.55;font-weight:700;margin:0 0 12px}
+.shot{margin:18px 0 0;max-width:440px}
+.shot img{display:block;width:100%;height:auto;border-radius:12px;border:1px solid var(--line)}
+.shot figcaption{font-size:14px;color:var(--sub);margin-top:6px}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:22px 0 8px;padding:0;list-style:none}
 .stats li{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
 .stats b{display:block;font-size:26px;line-height:1.3;color:var(--accent)}
