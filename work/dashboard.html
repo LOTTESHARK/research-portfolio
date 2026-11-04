@@ -1,0 +1,95 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>야외 실험 가능 시간</title><style>
+:root{--bg:#fafaf7;--card:#fff;--ink:#1d1d1b;--sub:#6b6b66;--line:#e4e3dc;--accent:#1f7a4d;--soft:#e8f4ec;--bad:#c0392b;--badsoft:#fbeae8}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.7 "Pretendard","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif}
+main{max-width:960px;margin:0 auto;padding:24px 16px 56px}
+nav.top{display:flex;gap:14px;flex-wrap:wrap;font-size:15px;margin-bottom:18px}nav.top a{color:var(--accent);text-decoration:none}
+h1{font-size:26px;line-height:1.35;margin:0 0 6px}h2{font-size:19px;margin:26px 0 10px}
+.lead{color:var(--sub);margin:0 0 18px}.note{font-size:13.5px;color:var(--sub)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin:12px 0}
+.big{font-size:30px;font-weight:700;color:var(--accent);line-height:1.3}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px 20px}
+label{display:block;font-size:14px;color:var(--sub)}label b{color:var(--ink);font-size:16px;margin-left:6px}
+input[type=range]{width:100%;accent-color:var(--accent)}
+table{border-collapse:collapse;width:100%;font-size:14.5px}th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;white-space:nowrap}
+th{color:var(--sub);font-weight:600;font-size:13px}
+tr.ok td{background:var(--soft)}tr.ng td:last-child{background:var(--badsoft);color:var(--bad);font-weight:700}
+.wrap{overflow-x:auto}.err{background:var(--badsoft);color:var(--bad);border-radius:10px;padding:12px 14px}
+button{font:inherit;border:1px solid var(--accent);background:#fff;color:var(--accent);border-radius:8px;padding:7px 12px;cursor:pointer}
+ul.plain{padding-left:18px;margin:6px 0}
+img.fig{max-width:100%;border:1px solid var(--line);border-radius:10px;background:#fff}
+footer{margin-top:36px;font-size:13.5px;color:var(--sub)}
+</style></head><body><main>
+<h1>야외 실험 가능 시간</h1><p class="lead">한국항공대학교 상공의 앞으로 7일 바람과 비 예보로, 내 기준에 맞는 시간을 찾아요.</p>
+
+<div id="err" class="err" hidden><b>데이터를 받지 못했어요.</b> <span id="errWhy"></span><br>
+<button id="useBackup">아침에 받아 둔 사본으로 보기</button></div>
+<div class="card"><div class="note" id="bestLabel">내 기준에 맞는 가장 긴 연속 시간대</div>
+<div class="big" id="best">불러오는 중…</div><div id="bestMeta" class="note"></div></div>
+<div class="card grid">
+ <div><label>풍속 기준 (이보다 약하면 가능)<b id="wv"></b></label><input id="w" type="range" min="4" max="30" step="1" value="10"></div>
+ <div><label>돌풍 기준<b id="gv"></b></label><input id="g" type="range" min="8" max="50" step="1" value="20"></div>
+ <div><label>비 기준 (시간당 강수 이하)<b id="pv"></b></label><input id="p" type="range" min="0" max="2" step="0.1" value="0"></div>
+</div>
+<div class="card"><div class="note">7일 시간별 풍속(선), 돌풍(점선), 강수(막대). 초록 칸이 「가능」 시간이에요.</div>
+<div class="wrap"><svg id="chart" viewBox="0 0 900 260" width="100%" style="min-width:620px"></svg></div></div>
+<div class="card"><h2 style="margin-top:0">첫날 24시간 <span class="note" id="dayCount"></span></h2>
+<div class="wrap"><table><thead><tr><th>시각</th><th>풍속 km/h</th><th>돌풍 km/h</th><th>강수 mm</th><th>가능</th></tr></thead><tbody id="rows"></tbody></table></div></div>
+<p class="note" id="meta"></p>
+<p class="note">출처: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> 예보 API (CC BY 4.0). 예보값이라 실제와 다를 수 있어요. 「가능」 기준은 연습용이고 실제 비행 판단 기준이 아니에요.</p>
+
+</main><script>
+const CFG = {"name": "한국항공대학교", "lat": 37.6, "lon": 126.865, "backup": "forecast-backup.json"};
+const URL = `https://api.open-meteo.com/v1/forecast?latitude=${CFG.lat}&longitude=${CFG.lon}&hourly=wind_speed_10m,wind_gusts_10m,precipitation&timezone=Asia%2FSeoul&forecast_days=7`;
+const $ = id => document.getElementById(id);
+let H = null, fetchedAt = null, fromBackup = false;
+const days = ['일','월','화','수','목','금','토'];
+function lab(t){ const d = new Date(t + ':00'); return `${d.getMonth()+1}/${d.getDate()}(${days[d.getDay()]}) ${String(d.getHours()).padStart(2,'0')}시`; }
+function ok(i, w, g, p){ return H.wind_speed_10m[i] < w && H.wind_gusts_10m[i] < g && H.precipitation[i] <= p; }
+function draw(){
+  if (!H) return;
+  const w = +$('w').value, g = +$('g').value, p = +$('p').value;
+  $('wv').textContent = w + ' km/h'; $('gv').textContent = g + ' km/h'; $('pv').textContent = p.toFixed(1) + ' mm';
+  const n = H.time.length; const flags = H.time.map((_, i) => ok(i, w, g, p));
+  let best = [0, -1], cur = 0, st = 0;
+  flags.forEach((f, i) => { if (f) { if (!cur) st = i; cur++; if (cur > best[0]) best = [cur, st]; } else cur = 0; });
+  if (best[0] === 0) { $('best').textContent = '이번 7일에는 가능 시간이 없어요'; $('bestMeta').textContent = '기준을 조금 넓혀 보세요'; }
+  else {
+    const a = best[1], b = best[1] + best[0] - 1;
+    const ws = H.wind_speed_10m.slice(a, b + 1), ps = H.precipitation.slice(a, b + 1);
+    $('best').textContent = `${lab(H.time[a])}부터 ${best[0]}시간`;
+    $('bestMeta').textContent = `끝: ${lab(H.time[b])}, 평균 풍속 ${(ws.reduce((x, y) => x + y, 0) / ws.length).toFixed(1)} km/h, 강수 합 ${ps.reduce((x, y) => x + y, 0).toFixed(1)} mm, 7일 전체 가능 ${flags.filter(Boolean).length}시간`;
+  }
+  const W = 900, Ht = 260, L = 40, R = 10, T = 12, B = 34, max = Math.max(30, ...H.wind_gusts_10m) * 1.05;
+  const x = i => L + i / (n - 1) * (W - L - R), y = v => T + (1 - v / max) * (Ht - T - B), bw = (W - L - R) / n;
+  let s = '';
+  flags.forEach((f, i) => { if (f) s += `<rect x="${x(i) - bw / 2}" y="${T}" width="${bw}" height="${Ht - T - B}" fill="#e8f4ec"/>`; });
+  for (let v = 0; v <= max; v += 10) s += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="#eee"/><text x="${L - 6}" y="${y(v) + 4}" font-size="11" text-anchor="end" fill="#888">${v}</text>`;
+  for (let d = 0; d < n; d += 24) s += `<line x1="${x(d)}" x2="${x(d)}" y1="${T}" y2="${Ht - B}" stroke="#ddd"/><text x="${x(d) + 4}" y="${Ht - 14}" font-size="11" fill="#666">${lab(H.time[d]).slice(0, -4)}</text>`;
+  H.precipitation.forEach((v, i) => { if (v > 0) s += `<rect x="${x(i) - bw / 2}" y="${Ht - B - Math.min(v * 20, 80)}" width="${bw}" height="${Math.min(v * 20, 80)}" fill="#7aa7d9"/>`; });
+  const line = arr => arr.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  s += `<polyline points="${line(H.wind_gusts_10m)}" fill="none" stroke="#9a9a92" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+  s += `<polyline points="${line(H.wind_speed_10m)}" fill="none" stroke="#1f7a4d" stroke-width="2.5"/>`;
+  $('chart').innerHTML = s;
+  const tb = $('rows'); tb.textContent = '';
+  let dc = 0;
+  for (let i = 0; i < 24 && i < n; i++) {
+    const f = flags[i]; if (f) dc++;
+    const tr = document.createElement('tr'); if (f) tr.className = 'ok';
+    [lab(H.time[i]).slice(-3), H.wind_speed_10m[i].toFixed(1), H.wind_gusts_10m[i].toFixed(1), H.precipitation[i].toFixed(1), f ? '가능' : ''].forEach(c => { const td = document.createElement('td'); td.textContent = c; tr.appendChild(td); });
+    tb.appendChild(tr);
+  }
+  $('dayCount').textContent = `가능 ${dc}시간`;
+  $('meta').textContent = `${CFG.name} (${CFG.lat}, ${CFG.lon}), 시간대 Asia/Seoul, 데이터 받은 시각 ${fetchedAt}${fromBackup ? ' (아침에 받아 둔 사본)' : ''}, 시간 줄 ${n}개`;
+}
+function show(d, backup){ H = d.hourly; fromBackup = backup; fetchedAt = backup ? (d._saved || '오늘 아침') : new Date().toLocaleString('ko-KR'); $('err').hidden = true; draw(); }
+async function load(){
+  const u = new URLSearchParams(location.search).get('fail') ? URL.replace('forecast', 'forecas') : URL;
+  try { const r = await fetch(u); if (!r.ok) throw new Error('응답 ' + r.status); show(await r.json(), false); }
+  catch (e) { $('err').hidden = false; $('errWhy').textContent = '(' + e.message + ')'; $('best').textContent = '데이터가 없어요'; }
+}
+$('useBackup').addEventListener('click', async () => { try { const r = await fetch(CFG.backup); show(await r.json(), true); } catch (e) { $('errWhy').textContent = '사본도 열지 못했어요'; } });
+['w', 'g', 'p'].forEach(id => $(id).addEventListener('input', draw));
+load();
+</script></body></html>
